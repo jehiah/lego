@@ -6,11 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"strings"
 	"time"
 
-	"github.com/miekg/dns"
+	// "github.com/miekg/dns"
 )
 
 type preCheckDNSFunc func(fqdn, value string) (bool, error)
@@ -77,110 +76,111 @@ func (s *dnsChallenge) Solve(chlng challenge, domain string) error {
 
 // checkDNSPropagation checks if the expected TXT record has been propagated to all authoritative nameservers.
 func checkDNSPropagation(fqdn, value string) (bool, error) {
-	// Initial attempt to resolve at the recursive NS
-	r, err := dnsQuery(fqdn, dns.TypeTXT, recursiveNameserver, true)
-	if err != nil {
-		return false, err
-	}
-	if r.Rcode != dns.RcodeSuccess {
-		return false, fmt.Errorf("Could not resolve %s -> %s", fqdn, dns.RcodeToString[r.Rcode])
-	}
-
-	// If we see a CNAME here then use the alias
-	for _, rr := range r.Answer {
-		if cn, ok := rr.(*dns.CNAME); ok {
-			if cn.Hdr.Name == fqdn {
-				fqdn = cn.Target
-				break
-			}
-		}
-	}
-
-	authoritativeNss, err := lookupNameservers(fqdn)
-	if err != nil {
-		return false, err
-	}
-
-	return checkAuthoritativeNss(fqdn, value, authoritativeNss)
-}
-
-// checkAuthoritativeNss queries each of the given nameservers for the expected TXT record.
-func checkAuthoritativeNss(fqdn, value string, nameservers []string) (bool, error) {
-	for _, ns := range nameservers {
-		r, err := dnsQuery(fqdn, dns.TypeTXT, ns, false)
-		if err != nil {
-			return false, err
-		}
-
-		if r.Rcode != dns.RcodeSuccess {
-			return false, fmt.Errorf("NS %s returned %s for %s", ns, dns.RcodeToString[r.Rcode], fqdn)
-		}
-
-		var found bool
-		for _, rr := range r.Answer {
-			if txt, ok := rr.(*dns.TXT); ok {
-				if strings.Join(txt.Txt, "") == value {
-					found = true
-					break
-				}
-			}
-		}
-
-		if !found {
-			return false, fmt.Errorf("NS %s did not return the expected TXT record", ns)
-		}
-	}
-
 	return true, nil
+	// // Initial attempt to resolve at the recursive NS
+	// r, err := dnsQuery(fqdn, dns.TypeTXT, recursiveNameserver, true)
+	// if err != nil {
+	// 	return false, err
+	// }
+	// if r.Rcode != dns.RcodeSuccess {
+	// 	return false, fmt.Errorf("Could not resolve %s -> %s", fqdn, dns.RcodeToString[r.Rcode])
+	// }
+	//
+	// // If we see a CNAME here then use the alias
+	// for _, rr := range r.Answer {
+	// 	if cn, ok := rr.(*dns.CNAME); ok {
+	// 		if cn.Hdr.Name == fqdn {
+	// 			fqdn = cn.Target
+	// 			break
+	// 		}
+	// 	}
+	// }
+	//
+	// authoritativeNss, err := lookupNameservers(fqdn)
+	// if err != nil {
+	// 	return false, err
+	// }
+	//
+	// return checkAuthoritativeNss(fqdn, value, authoritativeNss)
 }
 
-// dnsQuery sends a DNS query to the given nameserver.
-func dnsQuery(fqdn string, rtype uint16, nameserver string, recursive bool) (in *dns.Msg, err error) {
-	m := new(dns.Msg)
-	m.SetQuestion(fqdn, rtype)
-	m.SetEdns0(4096, false)
+// // checkAuthoritativeNss queries each of the given nameservers for the expected TXT record.
+// func checkAuthoritativeNss(fqdn, value string, nameservers []string) (bool, error) {
+// 	for _, ns := range nameservers {
+// 		r, err := dnsQuery(fqdn, dns.TypeTXT, ns, false)
+// 		if err != nil {
+// 			return false, err
+// 		}
+//
+// 		if r.Rcode != dns.RcodeSuccess {
+// 			return false, fmt.Errorf("NS %s returned %s for %s", ns, dns.RcodeToString[r.Rcode], fqdn)
+// 		}
+//
+// 		var found bool
+// 		for _, rr := range r.Answer {
+// 			if txt, ok := rr.(*dns.TXT); ok {
+// 				if strings.Join(txt.Txt, "") == value {
+// 					found = true
+// 					break
+// 				}
+// 			}
+// 		}
+//
+// 		if !found {
+// 			return false, fmt.Errorf("NS %s did not return the expected TXT record", ns)
+// 		}
+// 	}
+//
+// 	return true, nil
+// }
 
-	if !recursive {
-		m.RecursionDesired = false
-	}
-
-	in, err = dns.Exchange(m, net.JoinHostPort(nameserver, "53"))
-	if err == dns.ErrTruncated {
-		tcp := &dns.Client{Net: "tcp"}
-		in, _, err = tcp.Exchange(m, nameserver)
-	}
-
-	return
-}
-
-// lookupNameservers returns the authoritative nameservers for the given fqdn.
-func lookupNameservers(fqdn string) ([]string, error) {
-	var authoritativeNss []string
-
-	r, err := dnsQuery(fqdn, dns.TypeNS, recursiveNameserver, true)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, rr := range r.Answer {
-		if ns, ok := rr.(*dns.NS); ok {
-			authoritativeNss = append(authoritativeNss, strings.ToLower(ns.Ns))
-		}
-	}
-
-	if len(authoritativeNss) > 0 {
-		return authoritativeNss, nil
-	}
-
-	// Strip of the left most label to get the parent domain.
-	offset, _ := dns.NextLabel(fqdn, 0)
-	next := fqdn[offset:]
-	if dns.CountLabel(next) < 2 {
-		return nil, fmt.Errorf("Could not determine authoritative nameservers")
-	}
-
-	return lookupNameservers(next)
-}
+// // dnsQuery sends a DNS query to the given nameserver.
+// func dnsQuery(fqdn string, rtype uint16, nameserver string, recursive bool) (in *dns.Msg, err error) {
+// 	m := new(dns.Msg)
+// 	m.SetQuestion(fqdn, rtype)
+// 	m.SetEdns0(4096, false)
+//
+// 	if !recursive {
+// 		m.RecursionDesired = false
+// 	}
+//
+// 	in, err = dns.Exchange(m, net.JoinHostPort(nameserver, "53"))
+// 	if err == dns.ErrTruncated {
+// 		tcp := &dns.Client{Net: "tcp"}
+// 		in, _, err = tcp.Exchange(m, nameserver)
+// 	}
+//
+// 	return
+// }
+//
+// // lookupNameservers returns the authoritative nameservers for the given fqdn.
+// func lookupNameservers(fqdn string) ([]string, error) {
+// 	var authoritativeNss []string
+//
+// 	r, err := dnsQuery(fqdn, dns.TypeNS, recursiveNameserver, true)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+//
+// 	for _, rr := range r.Answer {
+// 		if ns, ok := rr.(*dns.NS); ok {
+// 			authoritativeNss = append(authoritativeNss, strings.ToLower(ns.Ns))
+// 		}
+// 	}
+//
+// 	if len(authoritativeNss) > 0 {
+// 		return authoritativeNss, nil
+// 	}
+//
+// 	// Strip of the left most label to get the parent domain.
+// 	offset, _ := dns.NextLabel(fqdn, 0)
+// 	next := fqdn[offset:]
+// 	if dns.CountLabel(next) < 2 {
+// 		return nil, fmt.Errorf("Could not determine authoritative nameservers")
+// 	}
+//
+// 	return lookupNameservers(next)
+// }
 
 // toFqdn converts the name into a fqdn appending a trailing dot.
 func toFqdn(name string) string {
